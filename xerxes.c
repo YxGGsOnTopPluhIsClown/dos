@@ -51,8 +51,8 @@
             // do nothing
     }
      
-    #define CONNECTIONS 8
-    #define THREADS 999999
+    #define CONNECTIONS 16
+    #define THREADS 64
      
     void attack(char *host, char *port, int id) {
             int sockets[CONNECTIONS];
